@@ -43,8 +43,8 @@ will make it pretty much last forever hopefully
 #define LATCH PB0
 #else
 #define IR_RECEIVE_PIN  2
-#define LIGHT_SENSE 3
-#define LATCH 4
+#define LIGHT_SENSE A7
+#define LATCH 10
 #endif
 
 unsigned long currentMillis = 0;
@@ -90,7 +90,7 @@ uint8_t senseLoopNum = 0;
 uint8_t readIndex = 0;
 
 uint8_t avgDelay = 10; // delay between readings
-uint16_t readDelay = 600000; // 10 minutes in milliseconds
+uint16_t readDelay = 6000; // 10 minutes in milliseconds (600,000ms)
 unsigned long targetMillisSensor = 0;
 unsigned long targetMillisAvg = 0;
 
@@ -99,9 +99,6 @@ bool sensing = false;
 
 void setup()
 {
-
-  Serial.begin(115200);
-
   IrReceiver.begin(IR_RECEIVE_PIN, ENABLE_LED_FEEDBACK);
   pinMode(LIGHT_SENSE, INPUT);
 
@@ -115,6 +112,8 @@ void setup()
     EEPROM.get(0x04, motorOneTarget);
     EEPROM.get(0x06, motorTwoTarget);
   }
+
+  stepper.stop();
 }
 
 void loop()
@@ -122,19 +121,23 @@ void loop()
   currentMillis = millis();
   checkIR();
 
+  // needs to be between target and max, not 0 and target
+
   if (closing == true)
   {
     if (activeMotor == 0b01) {
-      if (motorOneSteps < motorOneTarget) {
+      if (motorOneSteps < motorOneMax) {
         if (stepper.step(MOTOR_1, CW)) { motorOneSteps++; }
       } else {
         closing == false;
+        stepper.stop();
       }
     } else if (activeMotor == 0b10) {
-      if (motorTwoSteps < motorTwoTarget) {
+      if (motorTwoSteps < motorTwoMax) {
         if (stepper.step(MOTOR_2, CW)) { motorTwoSteps++; }
       } else {
         closing == false;
+        stepper.stop();
       }
     }
   }
@@ -142,16 +145,18 @@ void loop()
 
   if (opening == true) {
     if (activeMotor == 0b01) {
-      if (motorOneSteps > 0) {
+      if (motorOneSteps > motorOneTarget) {
         if (stepper.step(MOTOR_1, CCW)) { motorOneSteps--; }
       } else {
         opening = false;
+        stepper.stop();
       }
     } else if (activeMotor == 0b10) {
-      if (motorTwoSteps > 0) {
+      if (motorTwoSteps > motorOneTarget) {
         if (stepper.step(MOTOR_2, CCW)) { motorTwoSteps--; }
       } else {
         opening = false;
+        stepper.stop();
       }
     }
   }
@@ -219,9 +224,10 @@ void checkIR()
             if (calibrating == false) {
               // save max steps into EEPROM when calibrating switches back to false
               if (activeMotor == 0b01) 
-              { EEPROM.put(0x00, motorOneSteps); motorOneMax = motorOneTarget = motorOneSteps; }
+              { EEPROM.put(0x00, motorOneSteps); motorOneMax = motorOneSteps; }
               else if (activeMotor == 0b10) 
-              { EEPROM.put(0x02, motorTwoSteps); motorTwoMax = motorTwoTarget = motorTwoSteps; }
+              { EEPROM.put(0x02, motorTwoSteps); motorTwoMax = motorTwoSteps; }
+              stepper.stop();
             }
             break;
 
@@ -230,6 +236,7 @@ void checkIR()
             { EEPROM.put(0x04, motorOneSteps); motorOneTarget = motorOneSteps; }
             else if (activeMotor == 0b10)
             { EEPROM.put(0x06, motorTwoSteps); motorTwoTarget = motorOneSteps; }
+            stepper.stop();
             break;
 
           case UP:
@@ -243,11 +250,12 @@ void checkIR()
             break;
 
           case ONE:
-            activeMotor = 0b01;
+            if (opening == false && closing == false) { activeMotor = 0b01; }
+            
             break;
 
           case TWO:
-            activeMotor = 0b10;
+            if (opening == false && closing == false) { activeMotor = 0b10; }
             break;
 
           default:
