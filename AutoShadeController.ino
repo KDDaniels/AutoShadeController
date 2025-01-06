@@ -29,17 +29,17 @@
 
 unsigned long currentMillis = 0;
 
-// ======= EEPROM stuff =======
+// ======= EEPROM variables =======
 #include <EEPROM.h>
 
 
-// ======= Remote stuff ========
+// ======= Remote variabes ========
 #define DECODE_NEC
 #include <IRremote.hpp>
 #include "button_definitions.h"
 
 
-// ====== Motor stuff ========
+// ====== Motor variables ========
 #include <Stepper595.hpp>
 Stepper595 stepper(LATCH);
 uint16_t motorOneSteps = 0;
@@ -76,9 +76,9 @@ unsigned long flashLongDelay = 10000;
 bool stepperStopped = true;
 
 
-// ===== Light stuff ========
+// ===== Light variables ========
 uint16_t averageVal = 0;
-const uint16_t THRESHOLD = 20;
+const uint16_t THRESHOLD = 40;
 unsigned long readDelay = 5000; // 10 minutes in milliseconds (600,000ms)
 unsigned long targetMillisSensor = 0;
 
@@ -89,15 +89,12 @@ void setup()
   pinMode(LIGHT_SENSE, INPUT);
 
   // Load max steps
-  if (EEPROM.read(0x01) != 0xFF) {
-    EEPROM.get(0x00, motorOneMax);
-    EEPROM.get(0x02, motorTwoMax);
-    EEPROM.get(0x04, motorOneTarget);
-    EEPROM.get(0x06, motorTwoTarget);
-    
-  }
+  EEPROM.get(0x00, motorOneMax);
+  EEPROM.get(0x02, motorTwoMax);
+  EEPROM.get(0x04, motorOneTarget);
+  EEPROM.get(0x06, motorTwoTarget);
 
-  stepper.setDelay(3);
+  stepper.setDelay(2);
 
   stepper.stop();
 }
@@ -234,18 +231,20 @@ void loop()
       if ((motorOneSteps > motorOneTarget || motorTwoSteps > motorTwoTarget) || (motorOneOpen == false || motorTwoOpen == false))
       {
         opening = true;
+        stepperStopped = false;
       }
     }
-    else if (averageVal < THRESHOLD && closing == false)
+    else if (averageVal < THRESHOLD - 5 && closing == false)
     {
       if ((motorOneSteps < motorOneMax) || (motorTwoSteps < motorTwoMax) || (motorOneOpen == true || motorTwoOpen == true))
       {
         closing = true;
+        stepperStopped = false;
       }
     }
     else
     {
-      if (stepperStopped == false)
+      if (stepperStopped == false && ((motorOneOpen == true && motorTwoOpen == true) || (motorOneOpen == false && motorTwoOpen == false)))
       {
         stepper.stop();
         stepperStopped = true;
@@ -317,13 +316,13 @@ void checkIR()
 
                 if (activeMotor == 1) 
                 {
-                  // EEPROM.put(0x00, motorOneSteps);
+                  EEPROM.put(0x00, motorOneSteps);
                   motorOneMax = motorOneSteps;
                   motorOneOpen = false;
                 }
                 else if (activeMotor == 2) 
                 {
-                  // EEPROM.put(0x02, motorTwoSteps);
+                  EEPROM.put(0x02, motorTwoSteps);
                   motorTwoMax = motorTwoSteps;
                   motorTwoOpen = false;
                 }
@@ -333,19 +332,22 @@ void checkIR()
             break;
 
           case PLAY: // Set target shade position
-            if (activeMotor == 1)
+            if (activeMotor != 0)
             {
-              // EEPROM.put(0x04, motorOneSteps);
-              motorOneTarget = motorOneSteps;
+              if (activeMotor == 1)
+              {
+                EEPROM.put(0x04, motorOneSteps);
+                motorOneTarget = motorOneSteps;
+              }
+              else if (activeMotor == 2)
+              {
+                EEPROM.put(0x06, motorTwoSteps);
+                motorTwoTarget = motorTwoSteps;
+              }
+              opening = false;
+              closing = false;
+              stepper.stop();
             }
-            else if (activeMotor == 2)
-            {
-              // EEPROM.put(0x06, motorTwoSteps);
-              motorTwoTarget = motorTwoSteps;
-            }
-            opening = false;
-            closing = false;
-            stepper.stop();
             break;
 
           case UP:
@@ -363,6 +365,7 @@ void checkIR()
             break;
 
           case ZERO:
+            isAuto = false;
             activeMotor = 0;
             opening = false;
             closing = false;
@@ -370,15 +373,19 @@ void checkIR()
             break;
 
           case ONE:
+            isAuto = false;
             activeMotor = 1;
             opening = false;
             closing = false;
+            stepper.stop();
             break;
 
           case TWO:
+            isAuto = false;
             activeMotor = 2;
             opening = false;
             closing = false;
+            stepper.stop();
             break;
 
           default:
